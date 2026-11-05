@@ -1003,37 +1003,40 @@ function getMutasiHistory(p) {
     const hMap = getHeaderMap(sheet);
     let rows = data.slice(1);
 
-    const fromDate = p && p.from ? new Date(p.from + 'T00:00:00') : null;
-    const toDate   = p && p.to   ? new Date(p.to   + 'T23:59:59') : null;
+    const rawFrom = p && (p.from || p.dari);
+    const rawTo   = p && (p.to || p.hingga);
+    const rawType = p && (p.type || p.jenis);
+    const fromDate = rawFrom ? new Date(rawFrom + "T00:00:00") : null;
+    const toDate   = rawTo   ? new Date(rawTo   + "T23:59:59") : null;
 
     rows = rows.filter(r => {
       const ts = r[hMap.timestamp];
       const d  = ts instanceof Date ? ts : new Date(ts);
       if (fromDate && d < fromDate) return false;
       if (toDate   && d > toDate)   return false;
-      if (p && p.rak && String(r[hMap.rak] || '').trim().toLowerCase() !== p.rak.toLowerCase()) return false;
-      if (p && p.type && p.type !== 'ALL' && r[hMap.type] !== p.type) return false;
+      if (p && p.rak && String(r[hMap.rak] || "").trim().toLowerCase() !== p.rak.toLowerCase()) return false;
+      if (rawType && rawType !== "ALL" && rawType !== "" && r[hMap.type] !== rawType) return false;
       return true;
     });
 
     rows.reverse();
 
-    const limit = (p && p.limit) || 200;
+    const limit = (p && p.limit) || 500;
     const displayed = rows.slice(0, limit);
 
     const list = displayed.map(r => ({
-      tx_id:      r[hMap.tx_id] || '',
+      tx_id:      r[hMap.tx_id] || "",
       timestamp:  formatDate_(r[hMap.timestamp], true),
-      type:       r[hMap.type] || '',
-      nik:        r[hMap.nik] || '',
-      section:    r[hMap.seksi] || r[hMap.section] || '',
-      rak:        r[hMap.rak] || '',
-      gudang:     r[hMap.rak] || '',
-      code_barang:r[hMap.code_barang] || r[hMap.item_code] || '',
-      nama_barang:r[hMap.nama_barang] || r[hMap.spesifikasi] || '',
+      type:       r[hMap.type] || "",
+      nik:        r[hMap.nik] || "",
+      section:    r[hMap.seksi] || r[hMap.section] || "",
+      rak:        r[hMap.rak] || "",
+      gudang:     r[hMap.rak] || "",
+      code_barang:r[hMap.code_barang] || r[hMap.item_code] || "",
+      nama_barang:r[hMap.nama_barang] || r[hMap.spesifikasi] || "",
       qty:        Number(r[hMap.qty]) || 0,
-      satuan:     r[hMap.satuan] || 'PCS',
-      keterangan: r[hMap.keterangan] || '',
+      satuan:     r[hMap.satuan] || "PCS",
+      keterangan: r[hMap.keterangan] || "",
       stok_before:Number(r[hMap.stok_before]) || 0,
       stok_after: Number(r[hMap.stok_after]) || 0
     }));
@@ -1046,7 +1049,7 @@ function getMutasiHistory(p) {
       hasMore: rows.length > limit
     };
   } catch (err) {
-    return { success: false, message: 'Gagal memuat history mutasi: ' + err.toString() };
+    return { success: false, message: "Gagal memuat history mutasi: " + err.toString() };
   }
 }
 
@@ -1054,49 +1057,119 @@ function getReportData(p) {
   try {
     ensureSheets();
     const ss = getSpreadsheet();
-    const mutasiSheet = ss.getSheetByName('mutasi');
-    if (!mutasiSheet) return { success: true, list: [] };
+    const mutasiSheet = ss.getSheetByName("mutasi");
+    const dbSheet = ss.getSheetByName(DB_SHEET);
+    if (!mutasiSheet || !dbSheet) return { success: true, list: [], kpis: {} };
 
-    const data = mutasiSheet.getDataRange().getValues();
-    if (data.length <= 1) return { success: true, list: [] };
+    const dataMutasi = mutasiSheet.getDataRange().getValues();
+    const dataDb     = dbSheet.getDataRange().getValues();
 
-    const hMap = getHeaderMap(mutasiSheet);
-    const fromDate = p && p.from ? new Date(p.from + 'T00:00:00') : null;
-    const toDate   = p && p.to   ? new Date(p.to   + 'T23:59:59') : null;
+    const hMapMutasi = getHeaderMap(mutasiSheet);
+    const hMapDb     = getHeaderMap(dbSheet);
+    const dbKeys     = Object.keys(hMapDb);
+
+    const rIdx   = findColIdx_(dbKeys, ["rak", "lokasi_rak", "lokasi"]);
+    const cIdx   = findColIdx_(dbKeys, ["item_code", "code_barang", "kode"]);
+    const nIdx   = findColIdx_(dbKeys, ["spesifikasi", "nama_barang", "nama"]);
+    const fsIdx  = findColIdx_(dbKeys, ["stok_akhir", "final_stock", "stok"]);
+    const satIdx = findColIdx_(dbKeys, ["satuan", "satuan_barang", "unit"]);
+    const minIdx = findColIdx_(dbKeys, ["minimal_stok", "min_stok", "min_stock", "min_qty"]);
+    const remIdx = findColIdx_(dbKeys, ["remarks", "remark", "keterangan"]);
+
+    const colRak   = rIdx !== -1 ? hMapDb[dbKeys[rIdx]] : 0;
+    const colCode  = cIdx !== -1 ? hMapDb[dbKeys[cIdx]] : 1;
+    const colNama  = nIdx !== -1 ? hMapDb[dbKeys[nIdx]] : 2;
+    const colAkhir = fsIdx !== -1 ? hMapDb[dbKeys[fsIdx]] : 6;
+    const colSat   = satIdx !== -1 ? hMapDb[dbKeys[satIdx]] : 7;
+    const colMin   = minIdx !== -1 ? hMapDb[dbKeys[minIdx]] : 8;
+    const colRem   = remIdx !== -1 ? hMapDb[dbKeys[remIdx]] : 9;
+
+    const rawFrom = p && (p.from || p.dari);
+    const rawTo   = p && (p.to || p.hingga);
+    const fromDate = rawFrom ? new Date(rawFrom + "T00:00:00") : null;
+    const toDate   = rawTo   ? new Date(rawTo   + "T23:59:59") : null;
+
+    let totalTxCount = 0;
+    let totalInQty = 0;
+    let totalOutQty = 0;
 
     const summaryMap = {};
 
-    data.slice(1).forEach(r => {
-      const ts = r[hMap.timestamp];
-      const d  = ts instanceof Date ? ts : new Date(ts);
-      if (fromDate && d < fromDate) return;
-      if (toDate   && d > toDate)   return;
+    if (dataMutasi.length > 1) {
+      dataMutasi.slice(1).forEach(r => {
+        const ts = r[hMapMutasi.timestamp];
+        const d  = ts instanceof Date ? ts : new Date(ts);
+        if (fromDate && d < fromDate) return;
+        if (toDate   && d > toDate)   return;
 
-      const rak = String(r[hMap.rak] || '').trim();
-      if (p && p.rak && rak.toLowerCase() !== p.rak.toLowerCase()) return;
+        const rak = String(r[hMapMutasi.rak] || "").trim();
+        if (p && p.rak && rak.toLowerCase() !== p.rak.toLowerCase()) return;
 
-      const code = String(r[hMap.code_barang] || r[hMap.item_code] || '').trim();
-      const nama = String(r[hMap.nama_barang] || r[hMap.spesifikasi] || code).trim();
-      const sat  = String(r[hMap.satuan] || 'PCS').trim();
-      const qty  = Number(r[hMap.qty]) || 0;
-      const type = r[hMap.type];
+        const code = String(r[hMapMutasi.code_barang] || r[hMapMutasi.item_code] || "").trim();
+        const nama = String(r[hMapMutasi.nama_barang] || r[hMapMutasi.spesifikasi] || code).trim();
+        const sat  = String(r[hMapMutasi.satuan] || "PCS").trim();
+        const qty  = Number(r[hMapMutasi.qty]) || 0;
+        const type = r[hMapMutasi.type];
 
-      const key = code + '|' + rak;
-      if (!summaryMap[key]) {
-        summaryMap[key] = {
-          code, nama, rak, satuan: sat, in: 0, out: 0, lastStok: Number(r[hMap.stok_after]) || 0
-        };
+        totalTxCount++;
+        if (type === "IN") totalInQty += qty;
+        else if (type === "OUT") totalOutQty += qty;
+
+        const key = code + "|" + rak;
+        if (!summaryMap[key]) {
+          summaryMap[key] = {
+            code, nama, rak, satuan: sat, in: 0, out: 0, lastStok: Number(r[hMapMutasi.stok_after]) || 0
+          };
+        }
+
+        if (type === "IN") summaryMap[key].in += qty;
+        else if (type === "OUT") summaryMap[key].out += qty;
+        summaryMap[key].lastStok = Number(r[hMapMutasi.stok_after]) || 0;
+      });
+    }
+
+    let totalKritisCount = 0;
+    let totalDefisitQty = 0;
+    const rakMap = {};
+
+    dataDb.slice(1).filter(r => r[colCode]).forEach(r => {
+      const rak = String(r[colRak] || "TANPA RAK").trim();
+      const code = String(r[colCode]).trim();
+      const stok = Number(r[colAkhir]) || 0;
+      const min  = Number(r[colMin]) || 1;
+
+      const isLow = stok <= min;
+      if (isLow) {
+        totalKritisCount++;
+        totalDefisitQty += Math.max(0, min - stok);
       }
 
-      if (type === 'IN') summaryMap[key].in += qty;
-      else if (type === 'OUT') summaryMap[key].out += qty;
-      summaryMap[key].lastStok = Number(r[hMap.stok_after]) || 0;
+      if (!rakMap[rak]) {
+        rakMap[rak] = { rak, totalItems: 0, totalPcs: 0, itemsKritis: 0 };
+      }
+      rakMap[rak].totalItems++;
+      rakMap[rak].totalPcs += stok;
+      if (isLow) rakMap[rak].itemsKritis++;
     });
 
     const list = Object.values(summaryMap).sort((a, b) => (b.out + b.in) - (a.out + a.in));
-    return { success: true, list: list };
+    const rakList = Object.values(rakMap).sort((a, b) => a.rak.localeCompare(b.rak));
+
+    return {
+      success: true,
+      list: list,
+      rakSummary: rakList,
+      kpis: {
+        totalTx: totalTxCount,
+        totalIn: totalInQty,
+        totalOut: totalOutQty,
+        totalKritis: totalKritisCount,
+        totalDefisit: totalDefisitQty,
+        totalSku: dataDb.length - 1
+      }
+    };
   } catch (err) {
-    return { success: false, message: 'Gagal memuat rekap laporan: ' + err.toString() };
+    return { success: false, message: "Gagal memuat rekap laporan: " + err.toString() };
   }
 }
 
@@ -1875,26 +1948,95 @@ function applySheetConditionalRules_(sh, confName) {
 }
 
 // ===================================================================
-// BINCARD GENERATOR (KARTU STOK A5 DUAL-SIDED)
+// CODE 128 VECTOR BARCODE GENERATOR (NATIVE SVG, ZERO EXTERNAL DEPENDENCIES)
+// ===================================================================
+
+const CODE128_PATTERNS = [
+  "11011001100","11001101100","11001100110","10010011000","10010001100",
+  "10001001100","10011001000","10011000100","10001100100","11001001000",
+  "11001000100","11000100100","10110011100","10011011100","10011001110",
+  "10111001100","10011101100","10011100110","11001110010","11001011100",
+  "11001001110","11011100100","11001110100","11101101110","11101001100",
+  "11100101100","11100100110","11101100100","11100110100","11100110010",
+  "11011011000","11011000110","11000110110","10100011000","10001011000",
+  "10001000110","10110001000","10001101000","10001100010","11010001000",
+  "11000101000","11000100010","10110111000","10110001110","10001101110",
+  "10111011000","10111000110","10001110110","11101110110","11010001110",
+  "11000101110","11011101000","11011100010","11011101110","11101011000",
+  "11101000110","11100010110","11101101000","11101100010","11100011010",
+  "11101111010","11001000010","11110001010","10100110000","10100001100",
+  "10010110000","10010000110","10000101100","10000100110","10110010000",
+  "10110000100","10011010000","10011000010","10000110100","10000110010",
+  "11000010010","11001010000","11110111010","11000010100","10001111010",
+  "10100111100","10010111100","10010011110","10111100100","10011110100",
+  "10011110010","11110100100","11110010100","11110010010","11011011110",
+  "11011110110","11110110110","10101111000","10100011110","10001011110",
+  "10111101000","10111100010","11110101000","11110100010","10111011110",
+  "10111101110","11101011110","11110101110","11010000100","11010010000",
+  "11010011100","1100011101011"
+];
+
+function generateBarcodeSVG_(text, height) {
+  height = height || 22;
+  var clean = String(text || "").trim();
+  if (!clean) clean = "ITEM";
+  var startCode = 104; // Set B
+  var checksum = startCode;
+  var codes = [startCode];
+
+  for (var i = 0; i < clean.length; i++) {
+    var code = clean.charCodeAt(i) - 32;
+    if (code >= 0 && code <= 95) {
+      codes.push(code);
+      checksum += code * (i + 1);
+    }
+  }
+  codes.push(checksum % 103);
+  codes.push(106);
+
+  var patternStr = "";
+  codes.forEach(function(c) {
+    if (CODE128_PATTERNS[c]) patternStr += CODE128_PATTERNS[c];
+  });
+
+  var barWidth = 1.15;
+  var totalWidth = patternStr.length * barWidth;
+  var rects = "";
+  var x = 0;
+  for (var j = 0; j < patternStr.length; j++) {
+    if (patternStr[j] === "1") {
+      rects += "<rect x=\"" + x.toFixed(1) + "\" y=\"0\" width=\"" + barWidth.toFixed(2) + "\" height=\"" + height + "\" fill=\"#000\"/>";
+    }
+    x += barWidth;
+  }
+
+  return "<svg viewBox=\"0 0 " + Math.ceil(totalWidth) + " " + (height + 9) + "\" class=\"bc-svg\" style=\"max-height:" + (height + 9) + "px;width:auto;display:inline-block;\" xmlns=\"http://www.w3.org/2000/svg\">" +
+    rects +
+    "<text x=\"" + (totalWidth / 2).toFixed(1) + "\" y=\"" + (height + 7.5) + "\" font-family=\"monospace\" font-size=\"6.5\" font-weight=\"bold\" text-anchor=\"middle\" fill=\"#000\">" + escapeHtml_(clean) + "</text>" +
+    "</svg>";
+}
+
+// ===================================================================
+// BINCARD GENERATOR (A4 DIBAGI 2 / A5 DUPLEX BOLAK-BALIK DENGAN KOP ISO)
 // ===================================================================
 
 function getBincardDataForPrint(filter) {
   try {
     const ss = getSpreadsheet();
     const sheet = ss.getSheetByName(DB_SHEET);
-    if (!sheet) throw new Error('Sheet database tidak ditemukan.');
+    if (!sheet) throw new Error("Sheet database tidak ditemukan.");
 
     const data = sheet.getDataRange().getValues();
     const hMap = getHeaderMap(sheet);
     const keys = Object.keys(hMap);
 
-    const rIdx   = findColIdx_(keys, ['rak', 'lokasi_rak', 'lokasi', 'loc']);
-    const cIdx   = findColIdx_(keys, ['item_code', 'code_barang', 'kode']);
-    const nIdx   = findColIdx_(keys, ['spesifikasi', 'nama_barang', 'nama']);
-    const fsIdx  = findColIdx_(keys, ['stok_akhir', 'final_stock', 'stok']);
-    const satIdx = findColIdx_(keys, ['satuan', 'satuan_barang', 'unit']);
-    const minIdx = findColIdx_(keys, ['minimal_stok', 'min_stok', 'min_stock', 'min_qty']);
-    const remIdx = findColIdx_(keys, ['remarks', 'remark', 'keterangan']);
+    const rIdx   = findColIdx_(keys, ["rak", "lokasi_rak", "lokasi", "loc"]);
+    const cIdx   = findColIdx_(keys, ["item_code", "code_barang", "kode"]);
+    const nIdx   = findColIdx_(keys, ["spesifikasi", "nama_barang", "nama"]);
+    const fsIdx  = findColIdx_(keys, ["stok_akhir", "final_stock", "stok"]);
+    const satIdx = findColIdx_(keys, ["satuan", "satuan_barang", "unit"]);
+    const minIdx = findColIdx_(keys, ["minimal_stok", "min_stok", "min_stock", "min_qty"]);
+    const remIdx = findColIdx_(keys, ["remarks", "remark", "keterangan"]);
 
     const colRak   = rIdx !== -1 ? hMap[keys[rIdx]] : 0;
     const colCode  = cIdx !== -1 ? hMap[keys[cIdx]] : 1;
@@ -1904,20 +2046,24 @@ function getBincardDataForPrint(filter) {
     const colMin   = minIdx !== -1 ? hMap[keys[minIdx]] : 8;
     const colRem   = remIdx !== -1 ? hMap[keys[remIdx]] : 9;
 
-    const nowStr = Utilities.formatDate(new Date(), TIMEZONE, 'dd/MM/yyyy');
+    const nowStr = Utilities.formatDate(new Date(), TIMEZONE, "dd/MM/yyyy");
 
     let items = data.slice(1)
       .filter(r => r[colCode])
-      .map(r => ({
-        rak:      String(r[colRak] || '').trim(),
-        code:     String(r[colCode]).trim(),
-        nama:     String(r[colNama] || '').trim(),
-        satuan:   String(r[colSat] || 'PCS').trim(),
-        stok:     Number(r[colAkhir]) || 0,
-        min:      Number(r[colMin])   || 1,
-        remarks:  String(r[colRem] || '').trim(),
-        tglCetak: nowStr
-      }));
+      .map(r => {
+        const minStok = Number(r[colMin]) || 1;
+        return {
+          rak:      String(r[colRak] || "").trim(),
+          code:     String(r[colCode]).trim(),
+          nama:     String(r[colNama] || "").trim(),
+          satuan:   String(r[colSat] || "PCS").trim(),
+          stok:     Number(r[colAkhir]) || 0,
+          min:      minStok,
+          max:      Math.max(minStok * 3, 5),
+          remarks:  String(r[colRem] || "").trim(),
+          tglCetak: nowStr
+        };
+      });
 
     if (filter) {
       if (filter.rak) {
@@ -1928,15 +2074,37 @@ function getBincardDataForPrint(filter) {
       }
     }
 
-    const pairedSheets = [];
-    for (let i = 0; i < items.length; i += 2) {
-      pairedSheets.push({
-        itemLeft:  items[i],
-        itemRight: items[i + 1] || null
-      });
+    if (!items.length) {
+      return { success: false, message: "Tidak ada data barang yang sesuai kriteria pencarian." };
     }
 
-    return { success: true, sheets: pairedSheets, totalItems: items.length };
+    // Sort by Rak then Code
+    items.sort((a, b) => (a.rak || "").localeCompare(b.rak || "") || (a.code || "").localeCompare(b.code || ""));
+
+    const pairedSheets = [];
+    if (items.length === 1) {
+      // Single item: Duplicated on both halves of A4 (2 cards per sheet, 0 waste!)
+      pairedSheets.push({
+        itemLeft: items[0],
+        itemRight: items[0],
+        isDuplicate: true
+      });
+    } else {
+      for (let i = 0; i < items.length; i += 2) {
+        pairedSheets.push({
+          itemLeft:  items[i],
+          itemRight: items[i + 1] || items[i] // If odd, duplicate last item
+        });
+      }
+    }
+
+    return {
+      success: true,
+      sheets: pairedSheets,
+      totalItems: items.length,
+      totalSheets: pairedSheets.length,
+      itemsRaw: items
+    };
   } catch (e) {
     return { success: false, message: e.toString() };
   }
@@ -1945,207 +2113,328 @@ function getBincardDataForPrint(filter) {
 function renderBincardPrintPage(param) {
   const code = param ? param.code : null;
   const rak  = param ? (param.rak || param.gudang) : null;
-  const html = getBincardPrintHtml(code, rak);
+  const mode = param ? param.mode : "a4";
+  const html = getBincardPrintHtml(code, rak, mode);
   return HtmlService.createHtmlOutput(html)
-    .setTitle('Cetak Bincard Stok A5 — Gudang Elektrik')
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    .setTitle("Cetak Bincard Stok A5 Presisi — Gudang Elektrik")
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag("viewport", "width=device-width, initial-scale=1.0");
 }
 
-function getBincardPrintHtml(code, rak) {
+function getBincardPrintHtml(code, rak, mode) {
   const res = getBincardDataForPrint({ code: code, rak: rak });
   if (!res.success) {
-    return '<h3>Error memuat data bincard: ' + res.message + '</h3>';
+    return "<div style=\"font-family:Arial;padding:30px;text-align:center;color:#B91C1C;\"><h3>Gagal Memuat Bincard: " + escapeHtml_(res.message) + "</h3></div>";
   }
 
   const sheets = res.sheets || [];
-  let pagesHtml = '';
+  const items = res.itemsRaw || [];
+  let a4PagesHtml = "";
+  let a5PagesHtml = "";
 
+  // 1. Build A4 Landscape 2-Up Duplex Pages (Short Edge Flip Geometry)
   sheets.forEach((sh, idx) => {
-    pagesHtml += `
-      <div class="print-sheet side-a">
-        <div class="card-wrapper card-left">` + renderCardSideA_(sh.itemLeft) + `</div>
-        <div class="cut-guide"></div>
-        <div class="card-wrapper card-right">` + renderCardSideA_(sh.itemRight) + `</div>
-      </div>
-    `;
+    // Sheet Front (Page 2*idx + 1): Left = itemLeft, Right = itemRight
+    a4PagesHtml += "<div class=\"a4-sheet sheet-front\">" +
+      "<div class=\"card-wrap left-wrap\">" + renderCardSideA_(sh.itemLeft) + "</div>" +
+      "<div class=\"cut-guide\"><div class=\"scissors top\">✂️ POTONG DI SINI (A5)</div><div class=\"cut-line\"></div><div class=\"scissors bottom\">✂️ POTONG DI SINI (A5)</div></div>" +
+      "<div class=\"card-wrap right-wrap\">" + renderCardSideA_(sh.itemRight) + "</div>" +
+    "</div>";
 
-    pagesHtml += `
-      <div class="print-sheet side-b">
-        <div class="card-wrapper card-left">` + renderCardSideB_(sh.itemRight) + `</div>
-        <div class="cut-guide"></div>
-        <div class="card-wrapper card-right">` + renderCardSideB_(sh.itemLeft) + `</div>
-      </div>
-    `;
+    // Sheet Back (Page 2*idx + 2): Left = itemRight, Right = itemLeft (Swapped for short-edge flip duplex!)
+    a4PagesHtml += "<div class=\"a4-sheet sheet-back\">" +
+      "<div class=\"card-wrap left-wrap\">" + renderCardSideB_(sh.itemRight) + "</div>" +
+      "<div class=\"cut-guide\"><div class=\"scissors top\">✂️ POTONG DI SINI (A5)</div><div class=\"cut-line\"></div><div class=\"scissors bottom\">✂️ POTONG DI SINI (A5)</div></div>" +
+      "<div class=\"card-wrap right-wrap\">" + renderCardSideB_(sh.itemLeft) + "</div>" +
+    "</div>";
   });
 
-  return `
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <meta charset="utf-8">
-      <title>Cetak Bincard Stok A5 — Gudang Elektrik</title>
-      <style>
-        @page { size: A4 landscape; margin: 0; }
-        * { box-sizing: border-box; }
-        body { margin: 0; padding: 0; font-family: 'Arial', sans-serif; background: #525659; font-size: 8pt; color: #000; }
-        .no-print-bar { position: fixed; top: 0; left: 0; right: 0; background: #0F172A; color: white; padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; z-index: 9999; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
-        .no-print-bar button { background: #0284C7; color: white; border: none; padding: 8px 18px; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; }
-        .no-print-bar button:hover { background: #0369A1; }
-        .pages-container { margin-top: 55px; display: flex; flex-direction: column; align-items: center; gap: 20px; padding-bottom: 40px; }
-        .print-sheet { width: 297mm; height: 210mm; background: white; position: relative; display: flex; page-break-after: always; box-shadow: 0 4px 12px rgba(0,0,0,0.15); overflow: hidden; }
-        .card-wrapper { width: 148.5mm; height: 210mm; padding: 8mm 9mm; overflow: hidden; }
-        .cut-guide { position: absolute; left: 148.5mm; top: 0; bottom: 0; border-left: 1px dashed #CBD5E1; }
-        .bincard { width: 100%; height: 100%; border: 1.5px solid #000; padding: 6mm 7mm; display: flex; flex-direction: column; }
-        .bc-head { width: 100%; border-collapse: collapse; margin-bottom: 6px; }
-        .title-main { font-size: 13pt; font-weight: 900; letter-spacing: 0.5px; }
-        .sub-title { font-size: 8pt; color: #475569; margin-top: 1px; font-weight: bold; }
-        .side-badge { border: 1.5px solid #000; padding: 2px 8px; font-weight: 800; font-size: 8.5pt; text-transform: uppercase; }
-        .meta-box { width: 100%; border-collapse: collapse; margin-bottom: 8px; border: 1.5px solid #000; }
-        .meta-box td { border: 1px solid #000; padding: 4px 6px; font-size: 8pt; vertical-align: middle; }
-        .meta-lbl { background: #F1F5F9; font-weight: bold; width: 18%; }
-        .meta-val { width: 32%; }
-        .table-data { width: 100%; border-collapse: collapse; flex: 1; border: 1.5px solid #000; }
-        .table-data th { border: 1px solid #000; background: #E2E8F0; padding: 4px; font-size: 7.5pt; font-weight: bold; text-align: center; }
-        .table-data td { border: 1px solid #000; padding: 3.5px 4px; font-size: 7.5pt; text-align: center; height: 6.8mm; }
-        .text-left { text-align: left !important; }
-        .font-bold { font-weight: bold; }
-        .card-empty { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #94A3B8; font-style: italic; border: 1px dashed #CBD5E1; }
-        @media print {
-          body { background: transparent; }
-          .no-print-bar { display: none !important; }
-          .pages-container { margin: 0; padding: 0; gap: 0; }
-          .print-sheet { box-shadow: none; margin: 0; }
-        }
-      </style>
-    </head>
-    <body>
-      <div class="no-print-bar">
-        <div>
-          <b>Gudang Elektrik — Bincard Siap Cetak (A5 di A4)</b>
-          <span style="font-size:11px;color:#94A3B8;margin-left:12px;">Total: ` + res.totalItems + ` item (` + sheets.length + ` lembar A4 bolak-balik)</span>
-        </div>
-        <button onclick="window.print()">🖨️ Cetak Dokumen (A4 Landscape)</button>
-      </div>
-      <div class="pages-container">
-        ` + pagesHtml + `
-      </div>
-    </body>
-    </html>
-  `;
+  // 2. Build A5 Portrait 1-Up Duplex Pages (Direct A5 Paper Stock)
+  items.forEach((item, idx) => {
+    a5PagesHtml += "<div class=\"a5-page page-front\">" + renderCardSideA_(item) + "</div>";
+    a5PagesHtml += "<div class=\"a5-page page-back\">" + renderCardSideB_(item) + "</div>";
+  });
+
+  return "<!DOCTYPE html>\n" +
+  "<html>\n" +
+  "<head>\n" +
+  "  <meta charset=\"utf-8\">\n" +
+  "  <title>Cetak Kartu Bincard A5 — PT Semen Padang (Gudang Elektrik)</title>\n" +
+  "  <style>\n" +
+  "    @page { size: A4 landscape; margin: 0; }\n" +
+  "    *, *::before, *::after { box-sizing: border-box; }\n" +
+  "    body {\n" +
+  "      margin: 0; padding: 0;\n" +
+  "      font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;\n" +
+  "      background: #334155; color: #000; font-size: 7pt;\n" +
+  "      -webkit-print-color-adjust: exact; print-color-adjust: exact;\n" +
+  "    }\n" +
+  "    .print-bar {\n" +
+  "      position: fixed; top: 0; left: 0; right: 0;\n" +
+  "      background: #0F172A; color: white; padding: 10px 24px;\n" +
+  "      display: flex; justify-content: space-between; align-items: center;\n" +
+  "      z-index: 9999; box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 13px;\n" +
+  "    }\n" +
+  "    .print-bar-left { display: flex; align-items: center; gap: 14px; }\n" +
+  "    .print-bar-badge { background: #F59E0B; color: #0F172A; padding: 3px 8px; border-radius: 4px; font-weight: 800; font-size: 11px; letter-spacing: 0.05em; }\n" +
+  "    .mode-pills { display: inline-flex; background: #1E293B; border-radius: 6px; padding: 3px; gap: 3px; }\n" +
+  "    .mode-btn { background: transparent; border: none; color: #94A3B8; padding: 5px 12px; border-radius: 4px; font-size: 12px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; }\n" +
+  "    .mode-btn.active { background: #0284C7; color: white; }\n" +
+  "    .print-bar-actions { display: flex; align-items: center; gap: 10px; }\n" +
+  "    .btn-act { padding: 7px 16px; border-radius: 5px; font-weight: 700; font-size: 12.5px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }\n" +
+  "    .btn-print-main { background: #10B981; color: white; box-shadow: 0 2px 6px rgba(16,185,129,0.3); }\n" +
+  "    .btn-print-main:hover { background: #059669; }\n" +
+  "    .btn-close-main { background: #475569; color: white; }\n" +
+  "    .btn-close-main:hover { background: #334155; }\n" +
+  "    .duplex-hint-banner { background: #1E293B; color: #FBBF24; padding: 6px 14px; border-radius: 6px; font-size: 11px; border: 1px solid rgba(251,191,36,0.25); }\n" +
+  "    .render-container { margin-top: 65px; display: flex; flex-direction: column; align-items: center; gap: 22px; padding-bottom: 50px; }\n" +
+  "    .a4-sheet { width: 297mm; height: 210mm; background: #FFFFFF; position: relative; display: flex; page-break-after: always; box-shadow: 0 6px 20px rgba(0,0,0,0.25); overflow: hidden; }\n" +
+  "    .card-wrap { width: 148.5mm; height: 210mm; padding: 6mm 7.5mm; overflow: hidden; display: flex; flex-direction: column; }\n" +
+  "    .cut-guide { position: absolute; left: 148.5mm; top: 0; bottom: 0; width: 0; border-left: 1.5px dashed #94A3B8; display: flex; flex-direction: column; justify-content: space-between; align-items: center; z-index: 10; pointer-events: none; }\n" +
+  "    .scissors { background: #FFF; border: 1px solid #CBD5E1; border-radius: 999px; padding: 1px 6px; font-size: 8px; font-weight: 800; color: #64748B; white-space: nowrap; transform: translateX(-50%); }\n" +
+  "    .scissors.top { margin-top: 2mm; }\n" +
+  "    .scissors.bottom { margin-bottom: 2mm; }\n" +
+  "    .bincard-box { width: 100%; height: 100%; border: 1.8px solid #000000; padding: 4mm 5mm; display: flex; flex-direction: column; justify-content: space-between; background: #FFFFFF; }\n" +
+  "    .bc-header-table { width: 100%; border-collapse: collapse; margin-bottom: 3.5px; }\n" +
+  "    .kop-title { font-size: 11.5pt; font-weight: 900; letter-spacing: 0.03em; line-height: 1.15; }\n" +
+  "    .kop-sub { font-size: 7.2pt; font-weight: 700; color: #1E293B; margin-top: 1px; }\n" +
+  "    .kop-iso { font-size: 6.2pt; color: #64748B; font-family: monospace; margin-top: 1px; }\n" +
+  "    .side-pill { display: inline-block; border: 1.5px solid #000; padding: 2px 7px; font-weight: 900; font-size: 7.5pt; letter-spacing: 0.04em; background: #F1F5F9; }\n" +
+  "    .meta-grid { width: 100%; border-collapse: collapse; border: 1.5px solid #000; margin-bottom: 4px; }\n" +
+  "    .meta-grid td { border: 1px solid #000; padding: 2.5px 5px; font-size: 7.2pt; vertical-align: middle; }\n" +
+  "    .meta-lbl { background: #F1F5F9; font-weight: 700; color: #0F172A; width: 18%; }\n" +
+  "    .meta-val { width: 32%; }\n" +
+  "    .rak-highlight { font-size: 9pt; font-weight: 900; color: #0284C7; }\n" +
+  "    .code-highlight { font-size: 8.5pt; font-weight: 800; font-family: monospace; }\n" +
+  "    .data-table { width: 100%; border-collapse: collapse; border: 1.5px solid #000; flex: 1; }\n" +
+  "    .data-table th { border: 1px solid #000; background: #E2E8F0; padding: 3px 2px; font-size: 6.8pt; font-weight: 800; text-align: center; text-transform: uppercase; letter-spacing: 0.02em; }\n" +
+  "    .data-table td { border: 1px solid #000; padding: 2px 3px; font-size: 6.8pt; text-align: center; height: 6.2mm; vertical-align: middle; }\n" +
+  "    .so-table { width: 100%; border-collapse: collapse; border: 1.5px solid #000; margin-top: 4px; }\n" +
+  "    .so-table th { border: 1px solid #000; background: #CBD5E1; padding: 3px 2px; font-size: 6.8pt; font-weight: 800; text-align: center; }\n" +
+  "    .so-table td { border: 1px solid #000; padding: 2px 3px; font-size: 6.8pt; text-align: center; height: 5.8mm; vertical-align: middle; }\n" +
+  "    .sign-box-grid { width: 100%; border-collapse: collapse; border: 1.5px solid #000; margin-top: 4px; }\n" +
+  "    .sign-box-grid td { border: 1px solid #000; padding: 3px 6px; font-size: 6.5pt; width: 50%; height: 14mm; vertical-align: top; }\n" +
+  "    .card-footer-strip { display: flex; justify-content: space-between; font-size: 5.8pt; color: #475569; margin-top: 3px; font-weight: 600; }\n" +
+  "    .a5-container { display: none; }\n" +
+  "    body.mode-a5 .a4-container { display: none !important; }\n" +
+  "    body.mode-a5 .a5-container { display: flex !important; flex-direction: column; align-items: center; gap: 20px; margin-top: 65px; padding-bottom: 40px; }\n" +
+  "    body.mode-a5 .a5-page { width: 148.5mm; height: 210mm; background: #FFFFFF; padding: 6mm 7.5mm; box-shadow: 0 6px 20px rgba(0,0,0,0.25); page-break-after: always; overflow: hidden; display: flex; flex-direction: column; }\n" +
+  "    @media print {\n" +
+  "      body { background: transparent !important; }\n" +
+  "      .print-bar { display: none !important; }\n" +
+  "      .render-container { margin: 0 !important; padding: 0 !important; gap: 0 !important; }\n" +
+  "      .a4-sheet { box-shadow: none !important; margin: 0 !important; page-break-after: always !important; }\n" +
+  "      .a5-page { box-shadow: none !important; margin: 0 !important; page-break-after: always !important; }\n" +
+  "      body.mode-a5 @page { size: A5 portrait !important; margin: 0 !important; }\n" +
+  "      body:not(.mode-a5) @page { size: A4 landscape !important; margin: 0 !important; }\n" +
+  "    }\n" +
+  "  </style>\n" +
+  "</head>\n" +
+  "<body>\n" +
+  "  <div class=\"print-bar\">\n" +
+  "    <div class=\"print-bar-left\">\n" +
+  "      <span class=\"print-bar-badge\">PT SEMEN PADANG</span>\n" +
+  "      <b>Gudang Elektrik &bull; Bincard Duplex Presisi</b>\n" +
+  "      <span style=\"font-size:11px;color:#94A3B8;\">Total: " + res.totalItems + " Item (" + sheets.length + " Lembar A4 Bolak-Balik)</span>\n" +
+  "    </div>\n" +
+  "    <div class=\"mode-pills\">\n" +
+  "      <button type=\"button\" id=\"btn-mode-a4\" class=\"mode-btn active\" onclick=\"switchPrintMode('a4')\">📄 A4 Landscape (2-Up Siap Potong ✂️)</button>\n" +
+  "      <button type=\"button\" id=\"btn-mode-a5\" class=\"mode-btn\" onclick=\"switchPrintMode('a5')\">📃 A5 Portrait (1-Up Kertas A5)</button>\n" +
+  "    </div>\n" +
+  "    <div class=\"duplex-hint-banner\">\n" +
+  "      💡 <b>Panduan Duplex:</b> Centang <i>Print Both Sides</i> &bull; Pilih <b>Flip on Short Edge</b> (Balik Sisi Pendek)\n" +
+  "    </div>\n" +
+  "    <div class=\"print-bar-actions\">\n" +
+  "      <button type=\"button\" class=\"btn-act btn-print-main\" onclick=\"window.print()\">🖨️ Cetak Dokumen</button>\n" +
+  "      <button type=\"button\" class=\"btn-act btn-close-main\" onclick=\"window.close()\">✖️ Tutup</button>\n" +
+  "    </div>\n" +
+  "  </div>\n" +
+  "  <div class=\"render-container a4-container\">" + a4PagesHtml + "</div>\n" +
+  "  <div class=\"a5-container\">" + a5PagesHtml + "</div>\n" +
+  "  <script>\n" +
+  "    function switchPrintMode(mode) {\n" +
+  "      if (mode === 'a5') {\n" +
+  "        document.body.classList.add('mode-a5');\n" +
+  "        document.getElementById('btn-mode-a5').classList.add('active');\n" +
+  "        document.getElementById('btn-mode-a4').classList.remove('active');\n" +
+  "      } else {\n" +
+  "        document.body.classList.remove('mode-a5');\n" +
+  "        document.getElementById('btn-mode-a4').classList.add('active');\n" +
+  "        document.getElementById('btn-mode-a5').classList.remove('active');\n" +
+  "      }\n" +
+  "    }\n" +
+  "  </script>\n" +
+  "</body>\n" +
+  "</html>";
 }
 
 function renderCardSideA_(item) {
-  if (!item) return '<div class="card-empty">(Halaman Kosong)</div>';
+  if (!item) return "<div class=\"card-empty\">(Slot Kosong)</div>";
 
-  let rows = `
-    <tr>
-      <td>` + item.tglCetak + `</td>
-      <td>SALDO AWAL</td>
-      <td class="text-left">Stok Terkini Sistem</td>
-      <td>-</td>
-      <td>-</td>
-      <td class="font-bold">` + fmtNum(item.stok) + `</td>
-      <td>SYS</td>
-    </tr>
-  `;
-  for (let i = 0; i < 17; i++) {
-    rows += '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
+  let rows = "<tr>" +
+    "<td>" + item.tglCetak + "</td>" +
+    "<td style=\"font-weight:700;\">SALDO AWAL</td>" +
+    "<td style=\"text-align:left;font-size:6.5pt;\">Stok Awal Sistem Tercatat</td>" +
+    "<td>-</td>" +
+    "<td>-</td>" +
+    "<td style=\"font-weight:900;font-size:7.5pt;\">" + fmtNum(item.stok) + "</td>" +
+    "<td>SYS</td>" +
+  "</tr>";
+
+  for (let i = 0; i < 15; i++) {
+    rows += "<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>";
   }
 
-  return `
-    <div class="bincard">
-      <table class="bc-head">
-        <tr>
-          <td>
-            <div class="title-main">KARTU STOK / BINCARD</div>
-            <div class="sub-title">Gudang Elektrik — Inventory System</div>
-          </td>
-          <td style="text-align: right;">
-            <span class="side-badge">SISI A (MUKA)</span>
-          </td>
-        </tr>
-      </table>
+  const barcodeSvg = generateBarcodeSVG_(item.code, 20);
 
-      <table class="meta-box">
-        <tr>
-          <td class="meta-lbl">Lokasi Rak</td>
-          <td class="meta-val font-bold" style="color:#0284C7;font-size:9.5pt;">` + escapeHtml_(item.rak || '-') + `</td>
-          <td class="meta-lbl">Kode Barang</td>
-          <td class="meta-val font-bold" style="font-size:9pt;font-family:monospace;">` + escapeHtml_(item.code) + `</td>
-        </tr>
-        <tr>
-          <td class="meta-lbl">Spesifikasi</td>
-          <td class="meta-val font-bold" colspan="3">` + escapeHtml_(item.nama) + `</td>
-        </tr>
-        <tr>
-          <td class="meta-lbl">Remarks</td>
-          <td class="meta-val">` + escapeHtml_(item.remarks || '-') + `</td>
-          <td class="meta-lbl">Satuan / Min</td>
-          <td class="meta-val font-bold">` + escapeHtml_(item.satuan) + ` / Min: ` + fmtNum(item.min) + `</td>
-        </tr>
-      </table>
+  return "<div class=\"bincard-box\">" +
+    "<div>" +
+      "<table class=\"bc-header-table\">" +
+        "<tr>" +
+          "<td style=\"width:58%;vertical-align:top;\">" +
+            "<div class=\"kop-title\">KARTU STOK GUDANG</div>" +
+            "<div class=\"kop-sub\">PT SEMEN PADANG &bull; UNIT ELEKTRIKAL</div>" +
+            "<div class=\"kop-iso\">Dok: F-ELK-WHS-04 | Rev: 02 | Halaman: 1/1</div>" +
+          "</td>" +
+          "<td style=\"text-align:right;vertical-align:top;\">" +
+            "<div style=\"display:flex;flex-direction:column;align-items:flex-end;gap:3px;\">" +
+              "<span class=\"side-pill\">SISI A (MUKA)</span>" +
+              barcodeSvg +
+            "</div>" +
+          "</td>" +
+        "</tr>" +
+      "</table>" +
 
-      <table class="table-data">
-        <thead>
-          <tr>
-            <th style="width: 14%;">Tanggal</th>
-            <th style="width: 19%;">No. Bukti / WO</th>
-            <th style="width: 25%;">Keterangan / Bagian</th>
-            <th style="width: 11%;">Masuk</th>
-            <th style="width: 11%;">Keluar</th>
-            <th style="width: 11%;">Sisa</th>
-            <th style="width: 9%;">Paraf</th>
-          </tr>
-        </thead>
-        <tbody>
-          ` + rows + `
-        </tbody>
-      </table>
-    </div>
-  `;
+      "<table class=\"meta-grid\">" +
+        "<tr>" +
+          "<td class=\"meta-lbl\">Lokasi Rak</td>" +
+          "<td class=\"meta-val rak-highlight\">" + escapeHtml_(item.rak || "-") + "</td>" +
+          "<td class=\"meta-lbl\">Kode Barang</td>" +
+          "<td class=\"meta-val code-highlight\">" + escapeHtml_(item.code) + "</td>" +
+        "</tr>" +
+        "<tr>" +
+          "<td class=\"meta-lbl\">Spesifikasi</td>" +
+          "<td class=\"meta-val\" colspan=\"3\" style=\"font-weight:700;font-size:7.6pt;\">" + escapeHtml_(item.nama) + "</td>" +
+        "</tr>" +
+        "<tr>" +
+          "<td class=\"meta-lbl\">Satuan / Min</td>" +
+          "<td class=\"meta-val font-bold\">" + escapeHtml_(item.satuan) + " &bull; Min: " + fmtNum(item.min) + "</td>" +
+          "<td class=\"meta-lbl\">Remarks</td>" +
+          "<td class=\"meta-val\" style=\"font-size:6.8pt;\">" + escapeHtml_(item.remarks || "-") + "</td>" +
+        "</tr>" +
+      "</table>" +
+    "</div>" +
+
+    "<table class=\"data-table\">" +
+      "<thead>" +
+        "<tr>" +
+          "<th style=\"width:13%;\">Tanggal</th>" +
+          "<th style=\"width:18%;\">No. Bukti/WO</th>" +
+          "<th style=\"width:27%;\">Keterangan / Bagian</th>" +
+          "<th style=\"width:11%;\">Masuk</th>" +
+          "<th style=\"width:11%;\">Keluar</th>" +
+          "<th style=\"width:11%;\">Sisa</th>" +
+          "<th style=\"width:9%;\">Paraf</th>" +
+        "</tr>" +
+      "</thead>" +
+      "<tbody>" + rows + "</tbody>" +
+    "</table>" +
+
+    "<div class=\"card-footer-strip\">" +
+      "<span>Format: ISO Standard A5 (148.5 &times; 210 mm)</span>" +
+      "<span>Dicetak: " + item.tglCetak + "</span>" +
+      "<span>Wajib dicatat setiap transaksi fisik</span>" +
+    "</div>" +
+  "</div>";
 }
 
 function renderCardSideB_(item) {
-  if (!item) return '<div class="card-empty">(Halaman Kosong)</div>';
+  if (!item) return "<div class=\"card-empty\">(Slot Kosong)</div>";
 
-  let rows = '';
-  for (let i = 0; i < 21; i++) {
-    rows += '<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>';
+  let rows = "";
+  for (let i = 0; i < 10; i++) {
+    rows += "<tr><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>";
   }
 
-  return `
-    <div class="bincard">
-      <table class="bc-head">
-        <tr>
-          <td>
-            <div class="title-main">KARTU STOK (LANJUTAN)</div>
-            <div class="sub-title">Lokasi Rak: <b>` + escapeHtml_(item.rak || '-') + `</b> &bull; Kode: <b>` + escapeHtml_(item.code) + `</b></div>
-          </td>
-          <td style="text-align: right;">
-            <span class="side-badge">SISI B (BELAKANG)</span>
-          </td>
-        </tr>
-      </table>
+  let soRows = "";
+  for (let j = 0; j < 4; j++) {
+    soRows += "<tr><td></td><td></td><td></td><td></td><td></td><td></td></tr>";
+  }
 
-      <table class="table-data" style="margin-top: 6px;">
-        <thead>
-          <tr>
-            <th style="width: 14%;">Tanggal</th>
-            <th style="width: 19%;">No. Bukti / WO</th>
-            <th style="width: 25%;">Keterangan / Bagian</th>
-            <th style="width: 11%;">Masuk</th>
-            <th style="width: 11%;">Keluar</th>
-            <th style="width: 11%;">Sisa</th>
-            <th style="width: 9%;">Paraf</th>
-          </tr>
-        </thead>
-        <tbody>
-          ` + rows + `
-        </tbody>
-      </table>
-    </div>
-  `;
+  return "<div class=\"bincard-box\">" +
+    "<div>" +
+      "<table class=\"bc-header-table\">" +
+        "<tr>" +
+          "<td style=\"width:60%;vertical-align:top;\">" +
+            "<div class=\"kop-title\" style=\"font-size:10.5pt;\">KARTU STOK (LANJUTAN &amp; SO)</div>" +
+            "<div class=\"kop-sub\">Rak: <b style=\"color:#0284C7;\">" + escapeHtml_(item.rak || "-") + "</b> &bull; Kode: <b style=\"font-family:monospace;\">" + escapeHtml_(item.code) + "</b></div>" +
+            "<div style=\"font-size:6.5pt;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px;\">" + escapeHtml_(item.nama) + "</div>" +
+          "</td>" +
+          "<td style=\"text-align:right;vertical-align:top;\">" +
+            "<span class=\"side-pill\" style=\"background:#0F172A;color:#FFF;\">SISI B (BELAKANG)</span>" +
+          "</td>" +
+        "</tr>" +
+      "</table>" +
+
+      "<table class=\"data-table\" style=\"margin-top:2px;\">" +
+        "<thead>" +
+          "<tr>" +
+            "<th style=\"width:13%;\">Tanggal</th>" +
+            "<th style=\"width:18%;\">No. Bukti/WO</th>" +
+            "<th style=\"width:27%;\">Keterangan / Bagian</th>" +
+            "<th style=\"width:11%;\">Masuk</th>" +
+            "<th style=\"width:11%;\">Keluar</th>" +
+            "<th style=\"width:11%;\">Sisa</th>" +
+            "<th style=\"width:9%;\">Paraf</th>" +
+          "</tr>" +
+        "</thead>" +
+        "<tbody>" + rows + "</tbody>" +
+      "</table>" +
+    "</div>" +
+
+    "<div>" +
+      "<div style=\"font-weight:800;font-size:6.8pt;text-transform:uppercase;margin:4px 0 2px;letter-spacing:0.04em;color:#0F172A;\">" +
+        "&bull; REKONSILIASI AUDIT STOCK OPNAME FISIK GUDANG" +
+      "</div>" +
+      "<table class=\"so-table\">" +
+        "<thead>" +
+          "<tr>" +
+            "<th style=\"width:16%;\">Tanggal SO</th>" +
+            "<th style=\"width:15%;\">Stok Fisik</th>" +
+            "<th style=\"width:15%;\">Stok Kartu</th>" +
+            "<th style=\"width:14%;\">Selisih (+/-)</th>" +
+            "<th style=\"width:28%;\">Catatan Auditor</th>" +
+            "<th style=\"width:12%;\">Paraf</th>" +
+          "</tr>" +
+        "</thead>" +
+        "<tbody>" + soRows + "</tbody>" +
+      "</table>" +
+
+      "<table class=\"sign-box-grid\">" +
+        "<tr>" +
+          "<td>" +
+            "<b>Diverifikasi Oleh (Petugas Gudang):</b>" +
+            "<div style=\"height:7mm;\"></div>" +
+            "<div style=\"border-bottom:1px dotted #000;width:75%;\"></div>" +
+            "<div style=\"margin-top:1px;font-size:5.8pt;\">Tgl: &hellip;&hellip;&hellip;&hellip;&hellip;&hellip;&hellip;&hellip;</div>" +
+          "</td>" +
+          "<td>" +
+            "<b>Diketahui (Supervisor Pemeliharaan):</b>" +
+            "<div style=\"height:7mm;\"></div>" +
+            "<div style=\"border-bottom:1px dotted #000;width:75%;\"></div>" +
+            "<div style=\"margin-top:1px;font-size:5.8pt;\">Tgl: &hellip;&hellip;&hellip;&hellip;&hellip;&hellip;&hellip;&hellip;</div>" +
+          "</td>" +
+        "</tr>" +
+      "</table>" +
+
+      "<div class=\"card-footer-strip\">" +
+        "<span>Sisi Belakang: Lanjutan Transaksi &amp; Verifikasi Stock Opname</span>" +
+        "<span>Wajib digantungkan pada Rak Barang</span>" +
+      "</div>" +
+    "</div>" +
+  "</div>";
 }
+
 
 // ===================================================================
 // SEED DATA 1.006 ITEM (DARI GUDANG ELEKTRIK.XLSX)

@@ -1,0 +1,10 @@
+.DS_Store
+Thumbs.db
+*.log
+
+# Android build outputs & local config
+android-source/.gradle/
+android-source/build/
+android-source/app/build/
+android-source/local.properties
+android-source/.kotlin/
